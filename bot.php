@@ -4,7 +4,7 @@ $apiUrl = "https://api.telegram.org/bot$token/";
 $servername = "localhost";
 $username = "username";
 $password = "password";
-$dbname = "dbname";
+$dbname = "db name";
 
 // MySQLga ulanish
 $conn = new mysqli($servername, $username, $password, $dbname);
@@ -34,7 +34,7 @@ if ($chatId && $message) {
         if ($existingReferralCode) {
             // Mavjud foydalanuvchi
             $referralCode = $existingReferralCode;
-            $response = "Siz oldin botga obuna bo'lgansiz. Sizning referral kod: $referralCode\nDo'stlaringizni ushbu havola orqali taklif qiling: https://t.me/InstaSaverUz_Bot?start=$referralCode";
+            $response = "Siz oldin botga obuna bo'lgansiz.\nDo'stlaringizni ushbu havola orqali taklif qiling: https://t.me/InstaSaverUz_Bot?start=$referralCode";
         } else {
             // Yangi foydalanuvchi uchun referral kod yaratish
             $referralCode = bin2hex(random_bytes(5));
@@ -42,10 +42,24 @@ if ($chatId && $message) {
             $stmt->bind_param("is", $chatId, $referralCode);
             $stmt->execute();
             $stmt->close();
-            $response = "Botga hush kelibsiz! Sizning referral kod: $referralCode\nDo'stlaringizni ushbu havola orqali taklif qiling: https://t.me/InstaSaverUz_Bot?start=$referralCode";
+            $response = "Botga hush kelibsiz!\nDo'stlaringizni ushbu havola orqali taklif qiling: https://t.me/InstaSaverUz_Bot?start=$referralCode";
         }
-        sendMessage($chatId, $response);
-    } else if (strpos($message, '/start ') === 0) {
+
+        // Tugmalarni yaratish
+        $keyboard = [
+            'inline_keyboard' => [
+                [
+                    ['text' => "Do'stlarni taklif qilish", 'callback_data' => 'invite_friends'],
+                    ['text' => "Ballarni ko'rish", 'callback_data' => 'check_points']
+                ],
+                [
+                    ['text' => "Reyting", 'callback_data' => 'rating']
+                ]
+            ]
+        ];
+
+        sendMessage($chatId, $response, $keyboard);
+    } elseif (strpos($message, '/start ') === 0) {
         $referralCode = substr($message, 7);
         
         // Foydalanuvchini ro'yxatga olish va refererni belgilash
@@ -110,13 +124,59 @@ if ($chatId && $message) {
             // Notog'ri referal kod
             $response = "Notog'ri referral kod.";
         }
-        sendMessage($chatId, $response);
-    } else if ($message == '/rating') {
+
+        // Tugmalarni yaratish
+        $keyboard = [
+            'inline_keyboard' => [
+                [
+                    ['text' => "Do'stlarni taklif qilish", 'callback_data' => 'invite_friends'],
+                    ['text' => "Ballarni ko'rish", 'callback_data' => 'check_points']
+                ],
+                [
+                    ['text' => "Reyting", 'callback_data' => 'rating']
+                ]
+            ]
+        ];
+
+        sendMessage($chatId, $response, $keyboard);
+    }
+} elseif ($callbackQuery) {
+    $callbackData = $callbackQuery['data'];
+    $callbackChatId = $callbackQuery['message']['chat']['id'];
+    $callbackMessageId = $callbackQuery['message']['message_id'];
+
+    if ($callbackData == 'invite_friends') {
+        $stmt = $conn->prepare("SELECT referral_code FROM users WHERE telegram_id = ?");
+        $stmt->bind_param("i", $callbackChatId);
+        $stmt->execute();
+        $stmt->bind_result($referralCode);
+        $stmt->fetch();
+        $stmt->close();
+
+        if ($referralCode) {
+            $response = "Do'stlaringizni ushbu havola orqali taklif qiling: https://t.me/InstaSaverUz_Bot?start=$referralCode";
+        } else {
+            $response = "Sizning referral kod topilmadi.";
+        }
+
+        sendMessage($callbackChatId, $response);
+    } elseif ($callbackData == 'check_points') {
+        $stmt = $conn->prepare("SELECT points FROM users WHERE telegram_id = ?");
+        $stmt->bind_param("i", $callbackChatId);
+        $stmt->execute();
+        $stmt->bind_result($points);
+        $stmt->fetch();
+        $stmt->close();
+
+        $response = "Sizda $points ball bor.";
+
+        sendMessage($callbackChatId, $response);
+    } elseif ($callbackData == 'rating') {
         // Top 10 reytingni ko'rsatish
         $stmt = $conn->prepare("SELECT telegram_id, points FROM users ORDER BY points DESC LIMIT 10");
         $stmt->execute();
         $stmt->bind_result($userId, $points);
-        
+
         $ratingMessage = "Top 10 foydalanuvchilar:\n";
         $rank = 1;
         while ($stmt->fetch()) {
@@ -126,7 +186,7 @@ if ($chatId && $message) {
         }
         $stmt->close();
 
-        sendMessage($chatId, $ratingMessage, null, 'Markdown');
+        sendMessage($callbackChatId, $ratingMessage, null, 'Markdown');
     }
 }
 
